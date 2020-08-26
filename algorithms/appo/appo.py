@@ -1,5 +1,5 @@
 """
-Algorithm entry poing.
+Algorithm entry point.
 Methods of the APPO class initiate all other components (rollout & policy workers and learners) in the main thread,
 and then fork their separate processes.
 All data structures that are shared between processes are also created during the construction of APPO.
@@ -64,16 +64,16 @@ class APPO(ReinforcementLearningAlgorithm):
 
         p.add_argument(
             '--rollout', default=32, type=int,
-            help='Length of the rollout from each environment in timesteps.'
-                 'Once we collect this many timesteps on actor worker, we send this trajectory to the learner.'
-                 'The length of the rollout will determine how many timesteps are used to calculate bootstrapped'
-                 'Monte-Carlo estimates of discounted rewards, advantages, GAE, or V-trace targets. Shorter rollouts'
-                 'reduce variance, but the estimates are less precise (bias vs variance tradeoff).'
-                 'For RNN policies, this should be a multiple of --recurrence, so every rollout will be split'
-                 'into (n = rollout / recurrence) segments for backpropagation. V-trace algorithm currently requires that'
-                 'rollout == recurrence, which what you want most of the time anyway.'
-                 'Rollout length is independent from the episode length. Episode length can be both shorter or longer than'
-                 'rollout, although for PBT training it is currently recommended that rollout << episode_len'
+            help='Length of the rollout from each environment in timesteps. '
+                 'Once we collect this many timesteps on actor worker, we send this trajectory to the learner. '
+                 'The length of the rollout will determine how many timesteps are used to calculate bootstrapped '
+                 'Monte-Carlo estimates of discounted rewards, advantages, GAE, or V-trace targets. Shorter rollouts '
+                 'reduce variance, but the estimates are less precise (bias vs variance tradeoff). '
+                 'For RNN policies, this should be a multiple of --recurrence, so every rollout will be split '
+                 'into (n = rollout / recurrence) segments for backpropagation. V-trace algorithm currently requires that '
+                 'rollout == recurrence, which what you want most of the time anyway. '
+                 'Rollout length is independent from the episode length. Episode length can be both shorter or longer than '
+                 'rollout, although for PBT training it is currently recommended that rollout << episode_len '
                  '(see function finalize_trajectory in actor_worker.py)',
         )
 
@@ -93,23 +93,27 @@ class APPO(ReinforcementLearningAlgorithm):
         p.add_argument('--batch_size', default=1024, type=int, help='Minibatch size for SGD')
         p.add_argument(
             '--num_batches_per_iteration', default=1, type=int,
-            help='How many minibatches we collect before training on the collected experience. It is generally recommended to set this to 1 for most experiments, because any higher value will increase the policy lag.'
-                 'But in some specific circumstances it can be beneficial to have a larger macro-batch in order to shuffle and decorrelate the minibatches.'
-                 'Here and throughout the codebase: macro batch is the portion of experience that learner processes per iteration (consisting of 1 or several minibatches)',
+            help='How many minibatches we collect before training on the collected experience. '
+                 'It is generally recommended to set this to 1 for most experiments, because any '
+                 'higher value will increase the policy lag.'
+                 'But in some specific circumstances it can be beneficial to have a larger '
+                 'macro-batch in order to shuffle and decorrelate the minibatches.'
+                 'Here and throughout the codebase: macro batch is the portion of experience that '
+                 'learner processes per iteration (consisting of 1 or several minibatches)',
         )
         p.add_argument('--ppo_epochs', default=1, type=int, help='Number of training epochs before a new batch of experience is collected')
 
         p.add_argument(
             '--num_minibatches_to_accumulate', default=-1, type=int,
-            help='This parameter governs the maximum number of minibatches the learner can accumulate before further experience collection is stopped.'
-                 'The default value (-1) will set this to 2 * num_batches_per_iteration, so if the experience collection is faster than the training,'
-                 'the learner will accumulate enough minibatches for 2 iterations of training (but no more). This is a good balance between policy-lag and throughput.'
-                 'When the limit is reached, the learner will notify the policy workers that they ought to stop the experience collection until accumulated minibatches'
-                 'are processed. Set this parameter to 1 * num_batches_per_iteration to further reduce policy-lag.' 
-                 'If the experience collection is very non-uniform, increasing this parameter can increase overall throughput, at the cost of increased policy-lag.'
-                 'A value of 0 is treated specially. This means the experience accumulation is turned off, and all experience collection will be halted during training.'
-                 'This is the regime with potentially lowest policy-lag.'
-                 'When this parameter is 0 and num_workers * num_envs_per_worker * rollout == num_batches_per_iteration * batch_size, the algorithm is similar to'
+            help='This parameter governs the maximum number of minibatches the learner can accumulate before further experience collection is stopped. '
+                 'The default value (-1) will set this to 2 * num_batches_per_iteration, so if the experience collection is faster than the training, '
+                 'the learner will accumulate enough minibatches for 2 iterations of training (but no more). This is a good balance between policy-lag and throughput. '
+                 'When the limit is reached, the learner will notify the policy workers that they ought to stop the experience collection until accumulated minibatches '
+                 'are processed. Set this parameter to 1 * num_batches_per_iteration to further reduce policy-lag. '  
+                 'If the experience collection is very non-uniform, increasing this parameter can increase overall throughput, at the cost of increased policy-lag. '
+                 'A value of 0 is treated specially. This means the experience accumulation is turned off, and all experience collection will be halted during training. '
+                 'This is the regime with potentially lowest policy-lag. '
+                 'When this parameter is 0 and num_workers * num_envs_per_worker * rollout == num_batches_per_iteration * batch_size, the algorithm is similar to '
                  'regular synchronous PPO.',
         )
 
@@ -120,20 +124,20 @@ class APPO(ReinforcementLearningAlgorithm):
                        help='Coefficient for the exploration component of the loss function.')
         p.add_argument('--value_loss_coeff', default=0.5, type=float, help='Coefficient for the critic loss')
         p.add_argument('--exploration_loss', default='entropy', type=str, choices=['entropy', 'symmetric_kl'],
-                       help='Usually the exploration loss is based on maximizing the entropy of the probability'
-                            ' distribution. Note that mathematically maximizing entropy of the categorical probability '
-                            'distribution is exactly the same as minimizing the (regular) KL-divergence between'
-                            ' this distribution and a uniform prior. The downside of using the entropy term '
+                       help='Usually the exploration loss is based on maximizing the entropy of the probability '
+                            'distribution. Note that mathematically maximizing entropy of the categorical probability '
+                            'distribution is exactly the same as minimizing the (regular) KL-divergence between '
+                            'this distribution and a uniform prior. The downside of using the entropy term '
                             '(or regular asymmetric KL-divergence) is the fact that penalty does not increase as '
                             'probabilities of some actions approach zero. I.e. numerically, there is almost '
                             'no difference between an action distribution with a probability epsilon > 0 for '
                             'some action and an action distribution with a probability = zero for this action.'
-                            ' For many tasks the first (epsilon) distribution is preferrable because we keep some '
+                            'For many tasks the first (epsilon) distribution is preferrable because we keep some '
                             '(albeit small) amount of exploration, while the second distribution will never explore '
-                            'this action ever again.'
+                            'this action ever again. '
                             'Unlike the entropy term, symmetric KL divergence between the action distribution '
                             'and a uniform prior approaches infinity when entropy of the distribution approaches zero,'
-                            ' so it can prevent the pathological situations where the agent stops exploring. '
+                            'so it can prevent the pathological situations where the agent stops exploring. '
                             'Empirically, symmetric KL-divergence yielded slightly better results on some problems.',
                        )
 
@@ -153,26 +157,27 @@ class APPO(ReinforcementLearningAlgorithm):
         p.add_argument('--policy_workers_per_policy', default=1, type=int, help='Number of policy workers that compute forward pass (per policy)')
         p.add_argument(
             '--max_policy_lag', default=100, type=int,
-            help='Max policy lag in policy versions. Discard all experience that is older than this. This should be increased for configurations with multiple epochs of SGD because naturally'
-                 'policy-lag may exceed this value.',
+            help='Max policy lag in policy versions. Discard all experience that is older than '
+                 'this. This should be increased for configurations with multiple epochs of SGD '
+                 'because naturally policy-lag may exceed this value.',
         )
         p.add_argument(
             '--min_traj_buffers_per_worker', default=2, type=int,
-            help='How many shared rollout tensors to allocate per actor worker to exchange information between actors and learners'
-                 'Default value of 2 is fine for most workloads, except when differences in 1-step simulation time are extreme, like with some DMLab environments.'
+            help='How many shared rollout tensors to allocate per actor worker to exchange information between actors and learners '
+                 'Default value of 2 is fine for most workloads, except when differences in 1-step simulation time are extreme, like with some DMLab environments. '
                  'If you see a lot of warnings about actor workers having to wait for trajectory buffers, try increasing this to 4-6, this should eliminate the problem at a cost of more RAM.',
         )
         p.add_argument(
             '--decorrelate_experience_max_seconds', default=10, type=int,
-            help='Decorrelating experience serves two benefits. First: this is better for learning because samples from workers come from random moments in the episode, becoming more "i.i.d".'
-                 'Second, and more important one: this is good for environments with highly non-uniform one-step times, including long and expensive episode resets. If experience is not decorrelated'
-                 'then training batches will come in bursts e.g. after a bunch of environments finished resets and many iterations on the learner might be required,'
-                 'which will increase the policy-lag of the new experience collected. The performance of the Sample Factory is best when experience is generated as more-or-less'
+            help='Decorrelating experience serves two benefits. First: this is better for learning because samples from workers come from random moments in the episode, becoming more "i.i.d". '
+                 'Second, and more important one: this is good for environments with highly non-uniform one-step times, including long and expensive episode resets. If experience is not decorrelated '
+                 'then training batches will come in bursts e.g. after a bunch of environments finished resets and many iterations on the learner might be required, '
+                 'which will increase the policy-lag of the new experience collected. The performance of the Sample Factory is best when experience is generated as more-or-less '
                  'uniform stream. Try increasing this to 100-200 seconds to smoothen the experience distribution in time right from the beginning (it will eventually spread out and settle anyway)',
         )
         p.add_argument(
             '--decorrelate_envs_on_one_worker', default=True, type=str2bool,
-            help='In addition to temporal decorrelation of worker processes, also decorrelate envs within one worker process'
+            help='In addition to temporal decorrelation of worker processes, also decorrelate envs within one worker process '
                  'For environments with a fixed episode length it can prevent the reset from happening in the same rollout for all envs simultaneously, which makes experience collection more uniform.',
         )
 
@@ -182,14 +187,19 @@ class APPO(ReinforcementLearningAlgorithm):
 
         p.add_argument(
             '--set_workers_cpu_affinity', default=True, type=str2bool,
-            help='Whether to assign workers to specific CPU cores or not. The logic is beneficial for most workloads because prevents a lot of context switching.'
-                 'However for some environments it can be better to disable it, to allow one worker to use all cores some of the time. This can be the case for some DMLab environments with very expensive episode reset'
-                 'that can use parallel CPU cores for level generation.',
+            help='Whether to assign workers to specific CPU cores or not. The logic is beneficial ' 
+                'for most workloads because prevents a lot of context switching. '
+                'However for some environments it can be better to disable it, to allow one worker ' 
+                'to use all cores some of the time. This can be the case for some DMLab '
+                'environments with very expensive episode reset that can use parallel CPU cores '
+                'for level generation.',
         )
         p.add_argument(
             '--force_envs_single_thread', default=True, type=str2bool,
-            help='Some environments may themselves use parallel libraries such as OpenMP or MKL. Since we parallelize environments on the level of workers, there is no need to keep this parallel semantic.'
-                 'This flag uses threadpoolctl to force libraries such as OpenMP and MKL to use only a single thread within the environment.'
+            help='Some environments may themselves use parallel libraries such as OpenMP or MKL. '
+                 'Since we parallelize environments on the level of workers, there is no need to '
+                 'keep this parallel semantic. This flag uses threadpoolctl to force libraries '
+                 'such as OpenMP and MKL to use only a single thread within the environment.'
                  'Default value (True) is recommended unless you are running fewer workers than CPU cores.',
         )
         p.add_argument('--reset_timeout_seconds', default=120, type=int, help='Fail worker on initialization if not a single environment was reset in this time (worker probably got stuck)')
@@ -198,7 +208,7 @@ class APPO(ReinforcementLearningAlgorithm):
 
         p.add_argument(
             '--train_in_background_thread', default=True, type=str2bool,
-            help='Using background thread for training is faster and allows preparing the next batch while training is in progress.'
+            help='Using background thread for training is faster and allows preparing the next batch while training is in progress. '
                  'Unfortunately debugging can become very tricky in this case. So there is an option to use only a single thread on the learner to simplify the debugging.',
         )
         p.add_argument('--learner_main_loop_num_cores', default=1, type=int, help='When batching on the learner is the bottleneck, increasing the number of cores PyTorch uses can improve the performance')
@@ -215,7 +225,7 @@ class APPO(ReinforcementLearningAlgorithm):
         p.add_argument('--pbt_optimize_batch_size', default=False, type=str2bool, help='Whether to optimize batch size or not (experimental)')
         p.add_argument(
             '--pbt_target_objective', default='true_reward', type=str,
-            help='Policy stat to optimize with PBT. true_reward (default) is equal to raw env reward if not specified, but can also be any other per-policy stat.'
+            help='Policy stat to optimize with PBT. true_reward (default) is equal to raw env reward if not specified, but can also be any other per-policy stat. '
                  'For DMlab-30 use value "dmlab_target_objective" (which is capped human normalized score)',
         )
 
